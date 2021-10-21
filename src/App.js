@@ -8,13 +8,52 @@ const commands = {
       new Date().getMilliseconds(),
       "BootNotification",
       {
-        "chargePointModel": "AC_7KW_001",
-        "chargePointSerialNumber": "022101000026JSS070KE3BAFF",
-        "chargePointVendor": "LINCHR",
-        "firmwareVersion": "V205B00D36",
+        "chargePointModel": "Virtual Test Device",
+        "chargePointSerialNumber": "testPointId",
+        "chargePointVendor": "Felix McCuaig",
+        "firmwareVersion": "v1.0",
         "meterSerialNumber": "20200097",
-        "meterType": "PRO-1 MOD"
-    }
+        "meterType": "Test Meter type"
+        }
+    ],
+    "Heartbeat": [
+        "2",
+        new Date().getMilliseconds(),
+        "Heartbeat",
+        {}
+    ],
+    "StartTransaction": [
+        "2",
+        new Date().getMilliseconds(),
+        "StartTransaction",
+        {
+            "connectorId": "1",
+            "idTag": "5tLBYXnPb4wCePZuUy3B",
+            "meterStart": 0,
+            //"reservationId": "",
+            "timestamp": new Date().toISOString()
+        }
+    ],
+    "StopTransaction": [
+        "2",
+        new Date().getMilliseconds(),
+        "StopTransaction",
+        {
+            "idTag": "5tLBYXnPb4wCePZuUy3B",
+            "meterStop": 2000,
+            "timestamp": new Date().toISOString(),
+            "transactionId": "",
+            //"reason": "",
+            //"transactionData": ""
+        }
+    ],
+    "Authorize": [
+        "2",
+        new Date().getMilliseconds(),
+        "Authorize",
+        {
+            "idTag": "5tLBYXnPb4wCePZuUy3B",
+        }
     ],
     "StatusNotification": {
         "connectorId": "",
@@ -25,24 +64,6 @@ const commands = {
         "vendorId": "",
         "vendorErrorCode": ""
     },
-    "Heartbeat": {
-
-    },
-    "StartTransaction": {
-        "connectorId": "",
-        "idTag": "",
-        "meterStart": "",
-        "reservationId": "",
-        "timestamp": ""
-    },
-    "StopTransaction": {
-        "idTag": "",
-        "meterStop": "",
-        "timestamp": "",
-        "transactionId": "",
-        "reason": "",
-        "transactionData": ""
-    },
     "MeterValues": {
         "connectorId": "",
         "transactionId": "",
@@ -52,10 +73,14 @@ const commands = {
 
 function App() {
     const [wsURL, setWSUrl] = useState("");
+    const [transactionId, setTransactionId] = useState(undefined);
+    const [client, setClient] = useState(undefined);
 
     useEffect(() => {
         if(wsURL) {
             var client = W3CWebSocket(wsURL);
+
+            setClient(client);
 
             client.onerror = function() {
               console.log('Connection Error');
@@ -72,9 +97,20 @@ function App() {
             };
             
             client.onmessage = function(e) {
-                if (typeof e.data === 'string') {
-                    console.log("Received: '" + e.data + "'");
+                var message = e.data;
+
+                try {
+                    var [messageTypeId, uniqueId, payload] = JSON.parse(message);
+                } catch (err) {
+                    console.err(`Err occurred ${err}`);
+                    return;
                 }
+
+                if(payload.transactionId) {
+                    setTransactionId(payload.transactionId);
+                }
+                
+                console.log(message);
             };
           }
     }, [wsURL]);
@@ -83,16 +119,40 @@ function App() {
     <div className="m-2">
         <h1 className="text-4xl">OCPP Simulator</h1>
         <DeviceInput onSubmit={(url)=>setWSUrl(url)}/>
-        <DeviceControls />
+        <DeviceControls 
+            heartbeat={() => {
+                client.send(JSON.stringify(commands["Heartbeat"]))
+            }}
+
+            startTransaction={() => {
+                client.send(JSON.stringify(commands["StartTransaction"]))
+            }}
+
+            stopTransaction={() => {
+                commands["StopTransaction"][3].transactionId = transactionId;
+                console.log(transactionId);
+                client.send(JSON.stringify(commands["StopTransaction"]))
+            }}
+
+            authorize={() => {
+                commands["Authorize"][3].idTag = "test";
+                client.send(JSON.stringify(commands["Authorize"]))
+            }}
+        />
     </div>
     );
 }
 
-function DeviceControls() {
+function DeviceControls({ stopTransaction, startTransaction, meterValues, heartbeat, authorize, statusNotification}) {
     return (
         <div className="mt-2">
             <h1 className="text-4xl">Device Controls</h1>
-            <DeviceControl name='Test' />
+            <DeviceControl name='StartTransaction' onClick={startTransaction} />
+            <DeviceControl name='StopTransaction' onClick={stopTransaction} />
+            <DeviceControl name='MeterValues' onClick={meterValues} />
+            <DeviceControl name='Heartbeat' onClick={heartbeat} />
+            <DeviceControl name='Authorize' onClick={authorize} />
+            <DeviceControl name='StatusNotification' onClick={statusNotification} />
         </div>
     );
 }
@@ -138,10 +198,10 @@ function DeviceInput({ onSubmit }) {
     );
 }
 
-const DeviceControl = ({ name }) => {
+const DeviceControl = ({ name, onClick }) => {
     return (
-        <div className="m-2">
-            <button className="bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded">{ name }</button>
+        <div className="m-2 flex">
+            <button onClick={onClick} className="bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded">{ name }</button>
         </div>
     );
 }
