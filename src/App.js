@@ -135,7 +135,7 @@ function App() {
             }}
 
             authorize={() => {
-                commands["Authorize"][3].idTag = "test";
+                commands["Authorize"][3].idTag = "TESTCARD";
                 client.send(JSON.stringify(commands["Authorize"]))
             }}
         />
