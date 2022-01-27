@@ -1,7 +1,22 @@
-import React, { useState, useEffect } from "react";
-
+import React, { useEffect, useState } from "react";
 import { DeviceInput } from "./UrlInput";
-import { Terminal } from "./CommandLine";
+
+export const AppWrapper = () => {
+  const [url, setUrl] = useState("");
+  const [client, setClient] = useState(undefined);
+
+  useEffect(() => {
+    if (url.length > 0) {
+      setClient(W3CWebSocket(url));
+    }
+  }, [url]);
+
+  if (client) {
+    return <App client={client} />;
+  } else {
+    return <DeviceInput onSubmit={(url) => setUrl(url)} />;
+  }
+};
 
 var W3CWebSocket = require("websocket").w3cwebsocket;
 
@@ -53,27 +68,176 @@ const commands = {
       idTag: "5tLBYXnPb4wCePZuUy3B",
     },
   ],
-  StatusNotification: {
-    connectorId: "",
-    errorCode: "",
-    info: "",
-    status: "",
-    timestamp: "",
-    vendorId: "",
-    vendorErrorCode: "",
-  },
-  MeterValues: {
-    connectorId: "",
-    transactionId: "",
-    meterValue: "",
-  },
+  StatusNotification: [
+    "2",
+    new Date().getMilliseconds(),
+    "StatusNotification",
+    {
+      connectorId: 1,
+      errorCode: "NoError",
+      info: "NoError",
+      status: "Available",
+      timestamp: new Date().toISOString(),
+      vendorId: "Felix McCuaig",
+      vendorErrorCode: "0",
+    },
+  ],
 };
 
-const App = () => {
+const CONNECTOR_STATUS = [
+  "Available",
+  "Preparing",
+  "Charging",
+  "SuspendedEV",
+  "SuspendedEVSE",
+  "Finishing",
+  "Reserved",
+  "Unavailable",
+  "Faulted",
+];
+
+const App = ({ client }) => {
   const [connectionStatus, updateConnectionStatus] = useState(false);
-  const [transactionId, setTransactionId] = useState(undefined);
-  const [client, setClient] = useState(undefined);
-  const [terminal, updateTerminal] = useState(["TEST"]);
+  const [connectors, updateConnectors] = useState([]);
+  const [pendingCommands, updatePendingCommands] = useState([]);
+
+  client.onerror = () => {
+    console.log("Connection Error");
+  };
+
+  client.onopen = () => {
+    updateConnectionStatus(true);
+  };
+
+  client.onclose = () => {
+    updateConnectionStatus(false);
+  };
+
+  client.onmessage = (e) => {
+    var message = e.data;
+
+    console.log(message);
+
+    try {
+      var [messageTypeId, uniqueId, payload] = JSON.parse(message);
+    } catch (err) {
+      console.err(`Err occurred ${err}`);
+      return;
+    }
+
+    if (messageTypeId === 3) {
+      console.log(pendingCommands, "pending commands");
+      var pendingCommand = pendingCommands.find((x) => x.id === uniqueId);
+      if (pendingCommand) {
+        if (pendingCommand.type === "StartTransaction") {
+          var transactionId = payload.transactionId;
+          var connectorStateIndex = connectors.findIndex(
+            (x) => x.id === pendingCommand.payload.connectorId
+          );
+          var connTemp = [...connectors];
+          connTemp[connectorStateIndex].transactionId = transactionId;
+          updateConnectors(connTemp);
+        }
+      }
+    } else if (messageTypeId === 2) {
+      //Command from server
+      try {
+        var [messageTypeId, uniqueId, action, payload] = JSON.parse(message);
+
+        switch (action) {
+          case "RemoteStartTransaction": {
+            //Send the reply, then the starttransrequest.
+            client.send(JSON.stringify([3, uniqueId, { status: "Accepted" }]));
+
+            var connector_id = payload.connectorId;
+            var idTag = payload.idTag;
+
+            console.log(`Connector Id`, connector_id);
+
+            var packet = [
+              "2",
+              new Date().getMilliseconds(),
+              "StartTransaction",
+              {
+                connectorId: connector_id,
+                idTag: idTag,
+                meterStart: 0,
+                timestamp: new Date().toISOString(),
+              },
+            ];
+
+            var tempPendingCommands = [...pendingCommands];
+            tempPendingCommands.push({
+              id: packet[1],
+              type: packet[2],
+              payload: packet[3],
+            });
+            updatePendingCommands(tempPendingCommands);
+
+            client.send(JSON.stringify(packet));
+
+            break;
+          }
+          case "RemoteStopTransaction": {
+            //reply and send stoptransrequest
+            client.send(JSON.stringify([3, uniqueId, { status: "Accepted" }]));
+
+            var transactionId = payload.transactionId;
+
+            var connectorStateIndex = connectors.findIndex(
+              (x) => x.transactionId === transactionId
+            );
+
+            if (connectorStateIndex === -1) {
+              console.log("Breaking, connectorStateIndex");
+              break;
+            }
+
+            var state = connectors[connectorStateIndex];
+
+            if (!state.transactionId) {
+              console.log("Breaking");
+              break;
+            }
+
+            var packet = [
+              "2",
+              new Date().getMilliseconds(),
+              "StopTransaction",
+              {
+                idTag: "TEST",
+                meterStop: state.metervalue,
+                timestamp: new Date().toISOString(),
+                transactionId: state.transactionId,
+              },
+            ];
+
+            var tempPendingCommands = [...pendingCommands];
+            tempPendingCommands.push({
+              id: packet[1],
+              type: packet[2],
+              payload: packet[3],
+            });
+            updatePendingCommands(tempPendingCommands);
+
+            client.send(JSON.stringify(packet));
+
+            var tempConnectors = [...connectors];
+            tempConnectors[connectorStateIndex].transactionId = undefined;
+            updateConnectors(tempConnectors);
+
+            break;
+          }
+          case "ChangeAvailability": {
+            break;
+          }
+        }
+      } catch (err) {
+        console.log(`Error parsing command from server: ${err}`);
+      }
+    } else {
+    }
+  };
 
   return (
     <div className="m-2">
@@ -81,116 +245,158 @@ const App = () => {
         OCPP Simulator{" "}
         {connectionStatus === true ? "Connected" : "Not Connected"}
       </h1>
-      <DeviceInput
-        onSubmit={(url) => {
-          var client = W3CWebSocket(url);
-
-          setClient(client);
-
-          client.onerror = () => {
-            console.log("Connection Error");
-          };
-
-          client.onopen = () => {
-            updateConnectionStatus(true);
-            console.log("WebSocket Client Connected");
-            var payload = JSON.stringify(commands["BootNotification"]);
-            client.send(payload);
-          };
-
-          client.onclose = () => {
-            updateConnectionStatus(false);
-            console.log("echo-protocol Client Closed");
-          };
-
-          client.onmessage = (e) => {
-            var message = e.data;
-            updateTerminal(terminal.concat(message.toString()));
-            console.log(e.data);
-
-            try {
-              var [messageTypeId, uniqueId, payload] = JSON.parse(message);
-            } catch (err) {
-              console.err(`Err occurred ${err}`);
-              return;
-            }
-
-            if (messageTypeId === 2) {
-              //Command from server
-              try {
-                var [messageTypeId, uniqueId, action, payload] =
-                  JSON.parse(message);
-
-                switch (action) {
-                  case "RemoteStartTransaction": {
-                    client.send(
-                      JSON.stringify([3, uniqueId, { status: "Accepted" }])
-                    );
-                    var idTag = payload.idTag;
-                    commands["StartTransaction"][3].idTag = idTag;
-                    client.send(JSON.stringify(commands["StartTransaction"]));
-                    break;
-                  }
-                  case "RemoteStopTransaction": {
-                    client.send(
-                      JSON.stringify([3, uniqueId, { status: "Accepted" }])
-                    );
-                    client.send(JSON.stringify(commands["StopTransaction"]));
-                    break;
-                  }
-                }
-              } catch (err) {
-                console.log(`Error parsing command from server: ${err}`);
-              }
-            } else {
-            }
-
-            if (payload.transactionId) {
-              setTransactionId(payload.transactionId);
-            }
-          };
-        }}
-      />
       <DeviceControls
-        heartbeat={() => {
-          client.send(JSON.stringify(commands["Heartbeat"]));
-        }}
-        startTransaction={() => {
-          client.send(JSON.stringify(commands["StartTransaction"]));
-        }}
-        stopTransaction={() => {
-          commands["StopTransaction"][3].transactionId = transactionId;
-          commands["StopTransaction"][3].timestamp = new Date().toISOString();
-          console.log(transactionId);
-          client.send(JSON.stringify(commands["StopTransaction"]));
-        }}
-        authorize={() => {
-          commands["Authorize"][3].idTag = "TESTCARD";
-          client.send(JSON.stringify(commands["Authorize"]));
-        }}
+        client={client}
+        heartbeat={() => {}}
+        authorize={() => {}}
       />
-      <Terminal lines={terminal.join(`\n`)} />
+      <h1>Connector Manager</h1>
+      <div className="border rounded p-2">
+        {connectors.map((x) => (
+          <Connector
+            key={x.id}
+            data={x}
+            onUpdate={(state, type) => {
+              var tempConnectors = [...connectors];
+              var stateIndex = tempConnectors.findIndex(
+                (x) => x.id === state.id
+              );
+              tempConnectors[stateIndex] = state;
+              updateConnectors(tempConnectors);
+              console.log(`Updated connectors`);
+
+              if (type === "connector") {
+                //Send a status notification with new state
+                client.send(
+                  JSON.stringify([
+                    "2",
+                    new Date().getMilliseconds(),
+                    "StatusNotification",
+                    {
+                      connectorId: state.id,
+                      errorCode: state.errorCode,
+                      info: "NoError",
+                      status: state.status,
+                      timestamp: new Date().toISOString(),
+                      vendorId: "Felix McCuaig",
+                      vendorErrorCode: "0",
+                    },
+                  ])
+                );
+              } else if (type === "metervalues") {
+                var metervalue = {
+                  connectorId: state.id,
+                  transactionId: state.transactionId,
+                  meterValue: [
+                    {
+                      timestamp: new Date().toISOString(),
+                      sampledValue: [
+                        {
+                          value: state.metervalue,
+                          measurand: "Energy.Active.Import.Register",
+                          format: "Raw",
+                          context: "Sample.Periodic",
+                        },
+                      ],
+                    },
+                  ],
+                };
+                client.send(
+                  JSON.stringify([
+                    "2",
+                    new Date().getMilliseconds(),
+                    "MeterValues",
+                    metervalue,
+                  ])
+                );
+              }
+            }}
+            startTransaction={() => {
+              var packet = [
+                "2",
+                new Date().getMilliseconds(),
+                "StartTransaction",
+                {
+                  connectorId: x.id,
+                  idTag: "TEST",
+                  meterStart: 0,
+                  timestamp: new Date().toISOString(),
+                },
+              ];
+
+              var tempPendingCommands = [...pendingCommands];
+              tempPendingCommands.push({
+                id: packet[1],
+                type: packet[2],
+                payload: packet[3],
+              });
+              updatePendingCommands(tempPendingCommands);
+
+              client.send(JSON.stringify(packet));
+            }}
+            stopTransaction={() => {
+              var packet = [
+                "2",
+                new Date().getMilliseconds(),
+                "StopTransaction",
+                {
+                  idTag: "TEST",
+                  meterStop: x.metervalue,
+                  timestamp: new Date().toISOString(),
+                  transactionId: x.transactionId,
+                },
+              ];
+
+              var tempPendingCommands = [...pendingCommands];
+              tempPendingCommands.push({
+                id: packet[1],
+                type: packet[2],
+                payload: packet[3],
+              });
+              updatePendingCommands(tempPendingCommands);
+
+              client.send(JSON.stringify(packet));
+
+              var tempConnectors = [...connectors];
+              var connectorIndex = tempConnectors.findIndex(
+                (y) => y.id === x.id
+              );
+              tempConnectors[connectorIndex].transactionId = undefined;
+              updateConnectors(tempConnectors);
+            }}
+          />
+        ))}
+        <div>
+          <button
+            className="bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded"
+            onClick={() => {
+              var newConnector = {
+                id: connectors.length + 1,
+                status: "Available",
+                errorCode: "NoError",
+                transactionId: undefined,
+                metervalue: 0,
+                pendingCommands: [],
+              };
+
+              updateConnectors([...connectors, newConnector]);
+            }}
+          >
+            Add Connector
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
 
-function DeviceControls({
-  stopTransaction,
-  startTransaction,
-  meterValues,
-  heartbeat,
-  authorize,
-  statusNotification,
-}) {
+function DeviceControls({ heartbeat, authorize }) {
   return (
     <div className="mt-2">
       <h1 className="text-4xl">Device Controls</h1>
-      <DeviceControl name="StartTransaction" onClick={startTransaction} />
-      <DeviceControl name="StopTransaction" onClick={stopTransaction} />
-      <DeviceControl name="MeterValues" onClick={meterValues} />
+      <DeviceControl name="Bootnotification" onClick={() => {}} />
       <DeviceControl name="Heartbeat" onClick={heartbeat} />
       <DeviceControl name="Authorize" onClick={authorize} />
-      <DeviceControl name="StatusNotification" onClick={statusNotification} />
     </div>
   );
 }
@@ -204,6 +410,65 @@ const DeviceControl = ({ name, onClick }) => {
       >
         {name}
       </button>
+    </div>
+  );
+};
+
+const Connector = ({ data, onUpdate, startTransaction, stopTransaction }) => {
+  const [meterValue, updateMeterValue] = useState(data.metervalue);
+
+  return (
+    <div key={data.id} className="pb-2">
+      <h1>ID: {data.id}</h1>
+      <h1>Status: {data.status}</h1>
+      <h1>ErrorCode: {data.errorCode}</h1>
+      <h1>TransactionID: {data.transactionId}</h1>
+      <h1>Metervalue (wH): {meterValue}</h1>
+      <div className="pb-2">
+        <button
+          onClick={() => startTransaction()}
+          className="bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded"
+        >
+          Start Transaction
+        </button>
+        <button
+          onClick={() => stopTransaction()}
+          className="ml-2 bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded"
+        >
+          Stop Transaction
+        </button>
+      </div>
+      <div className="flex flex-row m-2">
+        <h1>Meter value:</h1>
+        <input
+          onChange={(e) => updateMeterValue(Number.parseFloat(e.target.value))}
+          type="number"
+          className="border rounded ml-2"
+        />
+        <button
+          className="ml-2 bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded"
+          onClick={() =>
+            onUpdate({ ...data, metervalue: meterValue }, "metervalues")
+          }
+        >
+          Metervalue update
+        </button>
+      </div>
+      <div className="flex flex-row m-2">
+        <h1>Status Update:</h1>
+        <select
+          value={data.status}
+          onChange={(e) =>
+            onUpdate({ ...data, status: e.target.value }, "connector")
+          }
+          className="border rounded ml-2"
+        >
+          {CONNECTOR_STATUS.map((x) => (
+            <option key={x} label={x} value={x} />
+          ))}
+        </select>
+      </div>
+      <hr />
     </div>
   );
 };
