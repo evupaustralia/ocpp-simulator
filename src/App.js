@@ -416,6 +416,8 @@ const DeviceControl = ({ name, onClick }) => {
 
 const Connector = ({ data, onUpdate, startTransaction, stopTransaction }) => {
   const [meterValue, updateMeterValue] = useState(data.metervalue);
+  const [transactionIdOverride, updateTransactionIdOverride] =
+    useState(undefined);
 
   return (
     <div key={data.id} className="pb-2">
@@ -452,6 +454,27 @@ const Connector = ({ data, onUpdate, startTransaction, stopTransaction }) => {
           }
         >
           Metervalue update
+        </button>
+      </div>
+      <div className="flex flex-row m-2">
+        <h1>Transaction ID:</h1>
+        <input
+          onChange={(e) =>
+            updateTransactionIdOverride(Number.parseFloat(e.target.value))
+          }
+          type="number"
+          className="border rounded ml-2"
+        />
+        <button
+          className="ml-2 bg-blue-400 text-white text-sm font-bold py-2 px-4 rounded"
+          onClick={() =>
+            onUpdate(
+              { ...data, transactionId: transactionIdOverride },
+              "transactionId"
+            )
+          }
+        >
+          Update Transaction ID
         </button>
       </div>
       <div className="flex flex-row m-2">
