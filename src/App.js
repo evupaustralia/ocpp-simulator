@@ -235,19 +235,21 @@ const App = ({ client }) => {
       <DeviceControls
         client={client}
         bootnotification={() => {
-          client.send([
-            "2",
-            new Date().getMilliseconds(),
-            "BootNotification",
-            {
-              chargePointModel: "Virtual Test Device",
-              chargePointSerialNumber: "testPointId",
-              chargePointVendor: "Felix McCuaig",
-              firmwareVersion: "v1.0",
-              meterSerialNumber: "20200097",
-              meterType: "Test Meter type",
-            },
-          ]);
+          client.send(
+            JSON.stringify([
+              "2",
+              new Date().getMilliseconds(),
+              "BootNotification",
+              {
+                chargePointModel: "Virtual Test Device",
+                chargePointSerialNumber: "testPointId",
+                chargePointVendor: "Felix McCuaig",
+                firmwareVersion: "v1.0",
+                meterSerialNumber: "20200097",
+                meterType: "Test Meter type",
+              },
+            ])
+          );
         }}
         heartbeat={() => {}}
         authorize={() => {}}
