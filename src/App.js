@@ -21,19 +21,6 @@ export const AppWrapper = () => {
 var W3CWebSocket = require("websocket").w3cwebsocket;
 
 const commands = {
-  BootNotification: [
-    "2",
-    new Date().getMilliseconds(),
-    "BootNotification",
-    {
-      chargePointModel: "Virtual Test Device",
-      chargePointSerialNumber: "testPointId",
-      chargePointVendor: "Felix McCuaig",
-      firmwareVersion: "v1.0",
-      meterSerialNumber: "20200097",
-      meterType: "Test Meter type",
-    },
-  ],
   Heartbeat: ["2", new Date().getMilliseconds(), "Heartbeat", {}],
   StartTransaction: [
     "2",
@@ -247,6 +234,21 @@ const App = ({ client }) => {
       </h1>
       <DeviceControls
         client={client}
+        bootnotification={() => {
+          client.send([
+            "2",
+            new Date().getMilliseconds(),
+            "BootNotification",
+            {
+              chargePointModel: "Virtual Test Device",
+              chargePointSerialNumber: "testPointId",
+              chargePointVendor: "Felix McCuaig",
+              firmwareVersion: "v1.0",
+              meterSerialNumber: "20200097",
+              meterType: "Test Meter type",
+            },
+          ]);
+        }}
         heartbeat={() => {}}
         authorize={() => {}}
       />
@@ -390,11 +392,11 @@ const App = ({ client }) => {
   );
 };
 
-function DeviceControls({ heartbeat, authorize }) {
+function DeviceControls({ heartbeat, authorize, bootnotification }) {
   return (
     <div className="mt-2">
       <h1 className="text-4xl">Device Controls</h1>
-      <DeviceControl name="Bootnotification" onClick={() => {}} />
+      <DeviceControl name="Bootnotification" onClick={bootnotification} />
       <DeviceControl name="Heartbeat" onClick={heartbeat} />
       <DeviceControl name="Authorize" onClick={authorize} />
     </div>
