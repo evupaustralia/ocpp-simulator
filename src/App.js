@@ -87,6 +87,7 @@ const App = ({ client }) => {
   const [connectionStatus, updateConnectionStatus] = useState(false);
   const [connectors, updateConnectors] = useState([]);
   const [pendingCommands, updatePendingCommands] = useState([]);
+  const [lines, updateLines] = useState([]);
 
   client.onerror = () => {
     console.log("Connection Error");
@@ -102,6 +103,7 @@ const App = ({ client }) => {
 
   client.onmessage = (e) => {
     var message = e.data;
+    updateLines([...lines, message]);
 
     console.log(message);
 
@@ -390,6 +392,7 @@ const App = ({ client }) => {
           </button>
         </div>
       </div>
+      <Terminal lines={lines} />
     </div>
   );
 };
@@ -496,6 +499,17 @@ const Connector = ({ data, onUpdate, startTransaction, stopTransaction }) => {
         </select>
       </div>
       <hr />
+    </div>
+  );
+};
+
+const Terminal = ({ lines, lineEntered }) => {
+  return (
+    <div>
+      <h1>Terminal</h1>
+      {lines.map((x, i) => (
+        <p key={i}>{x}</p>
+      ))}
     </div>
   );
 };
