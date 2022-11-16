@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const DEFAULT_URL = "ws://localhost:8080/testpointid";
+const DEFAULT_URL = "ws://localhost:9000/testpointid";
 
 export const DeviceInput = ({ onSubmit }) => {
   const [currentUrl, setUrl] = useState(DEFAULT_URL);
