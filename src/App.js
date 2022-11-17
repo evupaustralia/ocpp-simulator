@@ -85,7 +85,24 @@ const CONNECTOR_STATUS = [
 
 const App = ({ client }) => {
   const [connectionStatus, updateConnectionStatus] = useState(false);
-  const [connectors, updateConnectors] = useState([]);
+  const [connectors, updateConnectors] = useState([
+    {
+      id: 1,
+      status: "Available",
+      errorCode: "NoError",
+      transactionId: undefined,
+      metervalue: 0,
+      pendingCommands: [],
+    },
+    {
+      id: 2,
+      status: "Available",
+      errorCode: "NoError",
+      transactionId: undefined,
+      metervalue: 0,
+      pendingCommands: [],
+    },
+  ]);
   const [pendingCommands, updatePendingCommands] = useState([]);
   const [lines, updateLines] = useState([]);
 
