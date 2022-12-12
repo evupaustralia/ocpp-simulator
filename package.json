@@ -15,7 +15,7 @@
     "websocket": "^1.0.34"
   },
   "scripts": {
-    "start": "craco start",
+    "start": "NODE_OPTIONS=--openssl-legacy-provider craco start",
     "build": "craco build",
     "test": "craco test",
     "eject": "react-scripts eject"
